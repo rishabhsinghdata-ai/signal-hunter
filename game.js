@@ -653,6 +653,71 @@ function startLevel(i){
   currentLevel=new LEVELS[i]();
 }
 
+/* ---------- Level transition: warp-tunnel ---------- */
+function warpTransition(onDone) {
+  particles.length = 0; // silence any stray particle draws
+  const t0 = performance.now();
+  const DUR = 680;
+  const cx = W / 2, cy = H / 2;
+  const DIAG = Math.hypot(cx, cy) + 60;
+  const N = 80;
+  // Pre-generate fixed streak angles so they don't jitter between frames
+  const streaks = Array.from({length: N}, (_, i) => ({
+    angle: (i / N) * Math.PI * 2 + (Math.random() - 0.5) * 0.14,
+    seed:  Math.random(),
+  }));
+
+  function frame(now) {
+    const t = Math.min(1, (now - t0) / DUR);
+    // easeInOutCubic — slow start, fast middle, slow end
+    const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+
+    // Dark fill accumulates like motion blur
+    ctx.fillStyle = `rgba(7,11,20,${0.26 + ease * 0.44})`;
+    ctx.fillRect(0, 0, W, H);
+
+    // Warp streaks — inner end moves slowly, outer end flies ahead
+    streaks.forEach((s, si) => {
+      const base  = 10 + s.seed * 22;
+      const inner = base + ease * DIAG * 0.20;
+      const outer = base + ease * DIAG * 1.14;
+      const alpha = t < 0.80
+        ? 0.18 + ease * 0.60
+        : ((1 - t) / 0.20) * 0.78;
+      const accent = si % 8 === 0; // every 8th streak slightly brighter
+
+      ctx.beginPath();
+      ctx.moveTo(cx + inner * Math.cos(s.angle), cy + inner * Math.sin(s.angle));
+      ctx.lineTo(cx + outer * Math.cos(s.angle), cy + outer * Math.sin(s.angle));
+      ctx.strokeStyle = accent
+        ? `rgba(220,238,252,${Math.min(1, alpha * 1.7)})`
+        : `rgba(180,210,235,${alpha})`;
+      ctx.lineWidth = accent ? 1.5 + ease * 0.9 : 0.6 + ease * 0.5;
+      ctx.stroke();
+    });
+
+    // Soft radial flash at the midpoint — "punching through"
+    if (t > 0.34 && t < 0.70) {
+      const peak   = 1 - Math.abs(t - 0.52) / 0.18;
+      const flashA = Math.max(0, peak) * 0.20;
+      const rad = ctx.createRadialGradient(cx, cy, 0, cx, cy, W * 0.30);
+      rad.addColorStop(0, `rgba(215,232,250,${flashA})`);
+      rad.addColorStop(1, `rgba(215,232,250,0)`);
+      ctx.fillStyle = rad;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    if (t < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      ctx.clearRect(0, 0, W, H);
+      onDone();
+    }
+  }
+
+  requestAnimationFrame(frame);
+}
+
 function finishLevel(){
   hidePrompt();
   const ins=INSIGHTS[levelIdx];
@@ -671,11 +736,13 @@ function finishLevel(){
 el.insightNext.addEventListener('click',()=>{
   el.insight.classList.remove('show');
   currentLevel=null;
-  ctx.clearRect(0,0,W,H);
+  // Wait for card fade, then warp into next level
   setTimeout(()=>{
-    if(levelIdx+1<TOTAL_LEVELS){ startLevel(levelIdx+1); }
-    else { showFinal(); }
-  },380);
+    warpTransition(()=>{
+      if(levelIdx+1<TOTAL_LEVELS){ startLevel(levelIdx+1); }
+      else { showFinal(); }
+    });
+  },340);
 });
 
 /* ---------- Final dashboard ---------- */
