@@ -35,9 +35,10 @@ const el = {
   insightNext: document.getElementById('insightNext'),
   toast: document.getElementById('toast'),
   dots: document.getElementById('levelDots'),
+  muteBtn: document.getElementById('muteBtn'),
 };
 
-/* ---------- Insight content (the payoff of each level) ---------- */
+/* ---------- Insight content ---------- */
 const INSIGHTS = [
   { tag:'The headline', h:'4+ years turning chaos into clarity',
     p:'Senior Data Analyst who takes messy, real-world data and hands back decisions people actually trust. That outlier you just removed? That\'s the instinct.' },
@@ -58,6 +59,187 @@ let levelIdx = 0;
 let currentLevel = null;
 let collected = [];
 const TOTAL_LEVELS = INSIGHTS.length;
+
+/* ===================================================================
+   AUDIO ENGINE
+   Synthesised with Web Audio API — no external files.
+   Starts only after the first user gesture (startBtn click).
+   =================================================================== */
+let audioCtx = null;
+let masterGain = null;
+let ambientNodes = null;
+let audioMuted = false;
+const MASTER_VOL = 0.16;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.setValueAtTime(MASTER_VOL, audioCtx.currentTime);
+  masterGain.connect(audioCtx.destination);
+  startAmbient();
+}
+
+function startAmbient() {
+  if (!audioCtx) return;
+  ambientNodes = [];
+
+  // Gentle pad: two detuned sine waves + sub
+  const padFreqs = [110, 146.83, 164.81]; // A2, D3, E3 — open chord
+  padFreqs.forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const lfo = audioCtx.createOscillator();
+    const lfoGain = audioCtx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.value = freq + (i * 0.15); // tiny detune for warmth
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.08 + i * 0.03;   // very slow tremolo
+    lfoGain.gain.value = 0.012;
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(gain.gain);
+
+    gain.gain.setValueAtTime(0.055 - i * 0.012, audioCtx.currentTime);
+    gain.connect(masterGain);
+
+    // Soft filter so it doesn't cut through
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 900;
+    filter.Q.value = 0.7;
+    osc.connect(filter);
+    filter.connect(gain);
+
+    osc.start();
+    lfo.start();
+    ambientNodes.push(osc, gain, lfo, lfoGain, filter);
+  });
+
+  // Sparse arpeggio — single note every ~2.4s, very quiet
+  const arpNotes = [220, 261.63, 293.66, 329.63, 392]; // A3 C4 D4 E4 G4
+  let arpIdx = 0;
+  function scheduleArp() {
+    if (!audioCtx || audioMuted) { setTimeout(scheduleArp, 2600); return; }
+    const freq = arpNotes[arpIdx % arpNotes.length];
+    arpIdx++;
+    const osc = audioCtx.createOscillator();
+    const env = audioCtx.createGain();
+    const filt = audioCtx.createBiquadFilter();
+    filt.type = 'bandpass'; filt.frequency.value = freq * 2; filt.Q.value = 1.4;
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    const now = audioCtx.currentTime;
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime(0.038, now + 0.04);
+    env.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+    osc.connect(filt); filt.connect(env); env.connect(masterGain);
+    osc.start(now); osc.stop(now + 0.95);
+    setTimeout(scheduleArp, 2400 + Math.random() * 800);
+  }
+  setTimeout(scheduleArp, 1200);
+}
+
+function playInsightSound() {
+  if (!audioCtx || audioMuted) return;
+  const now = audioCtx.currentTime;
+  // Ascending two-tone chime
+  [[523.25, 0], [783.99, 0.12]].forEach(([freq, delay]) => {
+    const osc = audioCtx.createOscillator();
+    const env = audioCtx.createGain();
+    const rev = audioCtx.createBiquadFilter();
+    rev.type = 'highshelf'; rev.frequency.value = 3000; rev.gain.value = 4;
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    env.gain.setValueAtTime(0, now + delay);
+    env.gain.linearRampToValueAtTime(0.22, now + delay + 0.03);
+    env.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.55);
+    osc.connect(rev); rev.connect(env); env.connect(masterGain);
+    osc.start(now + delay); osc.stop(now + delay + 0.6);
+  });
+}
+
+function setMute(muted) {
+  audioMuted = muted;
+  if (masterGain) {
+    masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+    masterGain.gain.setTargetAtTime(muted ? 0 : MASTER_VOL, audioCtx.currentTime, 0.05);
+  }
+  el.muteBtn.textContent = muted ? '♪ off' : '♪ on';
+  el.muteBtn.classList.toggle('muted', muted);
+}
+
+el.muteBtn.addEventListener('click', () => setMute(!audioMuted));
+
+/* ===================================================================
+   INSIGHT POPUP — animated reveal
+   Canvas particle burst + CSS animation on the card itself.
+   =================================================================== */
+let particles = [];
+
+function spawnParticles(cx, cy) {
+  for (let i = 0; i < 28; i++) {
+    const angle = (i / 28) * Math.PI * 2 + Math.random() * 0.4;
+    const speed = 1.4 + Math.random() * 3.2;
+    const cols = ['rgba(34,211,238,', 'rgba(163,230,53,', 'rgba(251,191,36,'];
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1, decay: 0.022 + Math.random() * 0.018,
+      r: 1.5 + Math.random() * 2.5,
+      col: cols[Math.floor(Math.random() * cols.length)],
+    });
+  }
+}
+
+function updateParticles() {
+  particles = particles.filter(p => p.life > 0);
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.04; // gentle gravity
+    p.life -= p.decay;
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, 7);
+    ctx.fillStyle = p.col + p.life.toFixed(2) + ')';
+    ctx.fill();
+  }
+}
+
+// Typewriter for insight text
+function typewriterText(el, text, duration) {
+  el.textContent = '';
+  const chars = text.split('');
+  const interval = duration / chars.length;
+  let i = 0;
+  const tick = () => {
+    if (i < chars.length) { el.textContent += chars[i++]; setTimeout(tick, interval); }
+  };
+  tick();
+}
+
+// Number count-up for strings that start with a digit
+function animateInsightHeading(el, text) {
+  // If it starts with a digit, count up the leading number
+  const match = text.match(/^(\d+)/);
+  if (!match) { el.textContent = text; return; }
+  const target = parseInt(match[1]);
+  const rest = text.slice(match[1].length);
+  let current = 0;
+  const steps = 28;
+  const step = () => {
+    current = Math.min(target, current + Math.ceil(target / steps));
+    el.textContent = current + rest;
+    if (current < target) requestAnimationFrame(step);
+  };
+  step();
+}
 
 /* ---------- Build HUD dots ---------- */
 for(let i=0;i<TOTAL_LEVELS;i++){
@@ -99,232 +281,276 @@ window.addEventListener('touchend',()=>{pointer.down=false;currentLevel&&current
 
 /* ===================================================================
    LEVEL 1 — FILTER THE NOISE
-   Click the red outlier points to remove them. When only the clean
-   cluster remains, the level completes.
+   One red outlier visually separated from the clean cluster.
+   Click the single obvious outlier to complete the level.
    =================================================================== */
 function Level1(){
   const pts=[]; const cx=W/2, cy=H/2;
-  const cleanN=46, noiseN=22;
+  const cleanN=44;
+  // One outlier, placed clearly outside the cluster
+  const angle = rand(0, Math.PI*2);
+  const odist = rand(260, 300);
+  const ox = cx + Math.cos(angle)*odist;
+  const oy = cy + Math.sin(angle)*odist;
+  const outlier = {x: Math.max(50, Math.min(W-50, ox)), y: Math.max(90, Math.min(H-60, oy)),
+    outlier:true, r:rand(4,6), pulse:rand(0,6)};
+
   for(let i=0;i<cleanN;i++){
-    pts.push({x:cx+rand(-150,150),y:cy+rand(-90,90),outlier:false,gone:false,r:rand(2.5,4)});
+    pts.push({x:cx+rand(-140,140),y:cy+rand(-80,80),outlier:false,r:rand(2.5,4)});
   }
-  for(let i=0;i<noiseN;i++){
-    let x,y;do{x=rand(40,W-40);y=rand(90,H-60);}while(dist(x,y,cx,cy)<230);
-    pts.push({x,y,outlier:true,gone:false,r:rand(3,5),pulse:rand(0,6)});
-  }
+  pts.push(outlier);
+
+  let done=false;
   this.onResize=()=>{};
   this.onDown=(mx,my)=>{
-    for(const p of pts){
-      if(!p.gone&&p.outlier&&dist(mx,my,p.x,p.y)<16){
-        p.gone=true; toast('outlier removed');
-        if(pts.every(q=>q.gone||!q.outlier)){ complete(); }
-        return;
-      }
+    if(done) return;
+    if(dist(mx,my,outlier.x,outlier.y)<22){
+      done=true; toast('outlier removed');
+      setTimeout(()=>finishLevel(),420);
+      return;
     }
-    // clicking a clean point gently nudges feedback
     for(const p of pts){
-      if(!p.gone&&!p.outlier&&dist(mx,my,p.x,p.y)<14){ toast('that\'s signal — keep it'); return; }
+      if(!p.outlier&&dist(mx,my,p.x,p.y)<14){ toast('that\'s signal — keep it'); return; }
     }
   };
-  let done=false;
-  function complete(){ if(done)return; done=true; setTimeout(()=>finishLevel(),420); }
   this.draw=(t)=>{
-    // hover cue
-    let hot=null;
-    for(const p of pts){ if(!p.gone&&p.outlier&&dist(pointer.x,pointer.y,p.x,p.y)<16){hot=p;break;} }
+    const hot = dist(pointer.x,pointer.y,outlier.x,outlier.y)<22;
     for(const p of pts){
-      if(p.gone)continue;
       ctx.beginPath();
       if(p.outlier){
         const pulse=0.5+0.5*Math.sin(t*0.004+p.pulse);
-        ctx.arc(p.x,p.y,p.r+pulse*1.5,0,7);
-        ctx.fillStyle = p===hot?'rgba(251,191,36,0.95)':'rgba(239,68,68,'+(0.55+pulse*0.3)+')';
+        ctx.arc(p.x,p.y,p.r+pulse*2,0,7);
+        ctx.fillStyle = hot?'rgba(251,191,36,0.95)':'rgba(239,68,68,'+(0.6+pulse*0.3)+')';
         ctx.fill();
-        if(p===hot){ ctx.beginPath();ctx.arc(p.x,p.y,16,0,7);ctx.strokeStyle='rgba(251,191,36,0.6)';ctx.lineWidth=1.5;ctx.stroke(); }
+        ctx.beginPath();ctx.arc(p.x,p.y,22,0,7);
+        ctx.strokeStyle=hot?'rgba(251,191,36,0.7)':'rgba(239,68,68,'+(0.25+pulse*0.2)+')';
+        ctx.lineWidth=1.5;ctx.stroke();
       }else{
         ctx.arc(p.x,p.y,p.r,0,7);
-        ctx.fillStyle='rgba(34,211,238,0.7)';
+        ctx.fillStyle='rgba(34,211,238,0.65)';
         ctx.fill();
       }
     }
+    // connecting halo line from cluster centroid to outlier
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(outlier.x,outlier.y);
+    ctx.strokeStyle='rgba(239,68,68,0.12)';ctx.lineWidth=1;ctx.setLineDash([4,8]);ctx.stroke();ctx.setLineDash([]);
   };
-  showPrompt('Level 1 · Filter','The data is full of noise.','Click the <span class="key">red outliers</span> to remove them. Keep the signal.');
+  showPrompt('Level 1 · Filter','The data is full of noise.','Click the <span class="key">red outlier</span> to remove it. Keep the signal.');
 }
 
 /* ===================================================================
    LEVEL 2 — SORT THE BARS
-   Drag bars to sort them ascending. When ordered, reveals stats.
+   One bar is clearly the tallest (the standout metric).
+   Click it to "identify the key metric" and complete the level.
    =================================================================== */
 function Level2(){
-  const n=6; const vals=[3,1,5,2,6,4]; // shuffled
-  const labels=['','','','','',''];
-  const bars=[];
-  const bw=Math.min(74,(W-120)/n - 16);
+  const n=6;
+  const vals=[2,4,1,3,6,2]; // position 4 (val=6) is the obvious peak
+  const targetIdx=4;
+  const bw=Math.min(74,(W-120)/n-16);
   const gap=16; const totalW=n*(bw+gap)-gap; const startX=(W-totalW)/2;
-  const baseY=H-120; const maxH=H*0.42;
+  const baseY=H-100; const maxH=H*0.44;
+  const bars=[];
   for(let i=0;i<n;i++){
-    bars.push({val:vals[i], x:startX+i*(bw+gap), tx:startX+i*(bw+gap), h:(vals[i]/6)*maxH, w:bw});
+    bars.push({val:vals[i],x:startX+i*(bw+gap),h:(vals[i]/6)*maxH,w:bw});
   }
-  let drag=null, offX=0, done=false;
-  function slotOrder(){ return [...bars].sort((a,b)=>a.x-b.x); }
-  function isSorted(){
-    const o=slotOrder(); for(let i=1;i<o.length;i++) if(o[i].val<o[i-1].val) return false; return true;
-  }
-  function snap(){
-    const o=slotOrder();
-    o.forEach((b,i)=>{ if(b!==drag) b.tx=startX+i*(bw+gap); });
-  }
+  const target=bars[targetIdx];
+  let done=false;
+  this.onResize=()=>{};
   this.onDown=(mx,my)=>{
-    for(const b of bars){
-      if(mx>b.x&&mx<b.x+b.w&&my>baseY-b.h&&my<baseY){ drag=b; offX=mx-b.x; break; }
+    if(done) return;
+    // check clicked bar
+    for(let i=0;i<bars.length;i++){
+      const b=bars[i];
+      if(mx>b.x&&mx<b.x+b.w&&my>baseY-b.h&&my<baseY){
+        if(i===targetIdx){
+          done=true; toast('peak metric identified');
+          setTimeout(()=>finishLevel(),420);
+        } else {
+          toast('not the highest value');
+        }
+        return;
+      }
     }
   };
-  this.onMove=(mx,my)=>{ if(drag){ drag.x=mx-offX; drag.tx=drag.x; snap(); } };
-  this.onUp=()=>{
-    if(drag){ drag=null; snap();
-      if(isSorted()&&!done){ done=true; toast('sorted — ascending'); setTimeout(()=>finishLevel(),520); }
-    }
-  };
-  this.draw=()=>{
-    for(const b of bars){ if(b!==drag) b.x=lerp(b.x,b.tx,0.25); }
-    const o=slotOrder();
-    o.forEach((b,i)=>{
-      const sorted=isSorted();
+  this.draw=(t)=>{
+    const hot=bars.some((b,i)=>i===targetIdx&&pointer.x>b.x&&pointer.x<b.x+b.w&&pointer.y>baseY-b.h&&pointer.y<baseY);
+    bars.forEach((b,i)=>{
+      const isTarget=i===targetIdx;
+      const pulse=isTarget?(0.5+0.5*Math.sin(t*0.003)):0;
       const grad=ctx.createLinearGradient(0,baseY-b.h,0,baseY);
-      if(sorted){ grad.addColorStop(0,'rgba(163,230,53,0.95)');grad.addColorStop(1,'rgba(34,211,238,0.7)'); }
-      else{ grad.addColorStop(0,'rgba(71,85,105,0.9)');grad.addColorStop(1,'rgba(51,65,85,0.6)'); }
-      ctx.fillStyle = b===drag?'rgba(251,191,36,0.9)':grad;
-      roundRect(b.x,baseY-b.h,b.w,b.h,6); ctx.fill();
+      if(isTarget){
+        grad.addColorStop(0,hot?'rgba(251,191,36,0.95)':'rgba(34,211,238,'+(0.75+pulse*0.2)+')');
+        grad.addColorStop(1,'rgba(34,211,238,0.4)');
+        ctx.shadowColor='rgba(34,211,238,0.5)'; ctx.shadowBlur=isTarget?14:0;
+      } else {
+        grad.addColorStop(0,'rgba(71,85,105,0.75)');
+        grad.addColorStop(1,'rgba(51,65,85,0.45)');
+        ctx.shadowBlur=0;
+      }
+      ctx.fillStyle=grad;
+      roundRect(b.x,baseY-b.h,b.w,b.h,6);ctx.fill();
+      ctx.shadowBlur=0;
+      // value label on target
+      if(isTarget){
+        ctx.fillStyle=hot?'rgba(251,191,36,1)':'rgba(34,211,238,0.9)';
+        ctx.font='700 13px "JetBrains Mono",monospace';ctx.textAlign='center';
+        ctx.fillText('▲', b.x+b.w/2, baseY-b.h-10);
+        ctx.textAlign='left';
+      }
     });
-    // baseline
     ctx.strokeStyle='rgba(28,40,64,1)';ctx.lineWidth=2;
     ctx.beginPath();ctx.moveTo(startX-20,baseY+1);ctx.lineTo(startX+totalW+20,baseY+1);ctx.stroke();
   };
-  this.onResize=()=>{};
-  showPrompt('Level 2 · Sort','Unsorted bars hide the story.','<span class="key">Drag</span> the bars into ascending order.');
+  this.onMove=()=>{};this.onUp=()=>{};
+  showPrompt('Level 2 · Sort','Unsorted bars hide the story.','Click the <span class="key">tallest bar</span> to identify the key metric.');
 }
 function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 
 /* ===================================================================
    LEVEL 3 — CONNECT THE POINTS
-   Hover/drag across scattered points in order to draw a trend line.
-   Touch each point left-to-right to connect them.
+   A trend line with one visibly broken/misaligned point.
+   Click the outlier point that breaks the trend.
    =================================================================== */
 function Level3(){
-  const n=8; const pts=[];
-  const startX=W*0.12, endX=W*0.88, midY=H*0.5;
+  const n=9; const pts=[];
+  const startX=W*0.1, endX=W*0.9, midY=H*0.52;
+  // Pick one index to be the rogue point (not first or last)
+  const rogueIdx = 4;
   for(let i=0;i<n;i++){
     const x=lerp(startX,endX,i/(n-1));
-    const y=midY+Math.sin(i*0.9)*H*0.14 + rand(-14,14);
-    pts.push({x,y,hit:false,order:i});
+    const y=midY - (i/(n-1))*H*0.18 + rand(-10,10); // gentle upward trend
+    pts.push({x,y,base:y,rogue:false});
   }
-  let next=0, done=false;
-  this.onDown=(mx,my)=>tryHit(mx,my);
-  this.onMove=(mx,my)=>{ if(pointer.down) tryHit(mx,my); };
-  function tryHit(mx,my){
-    if(next>=n)return;
-    const p=pts[next];
-    if(dist(mx,my,p.x,p.y)<26){
-      p.hit=true; next++;
-      if(next>=n&&!done){ done=true; toast('trend connected'); setTimeout(()=>finishLevel(),520); }
-      else toast((n-next)+' points left');
+  // Displace the rogue point significantly off-trend
+  pts[rogueIdx].y = midY + H*0.18 + rand(-10,10);
+  pts[rogueIdx].rogue = true;
+  const rogue = pts[rogueIdx];
+  let done=false;
+  this.onResize=()=>{};
+  this.onDown=(mx,my)=>{
+    if(done) return;
+    if(dist(mx,my,rogue.x,rogue.y)<22){
+      done=true; toast('broken point found');
+      setTimeout(()=>finishLevel(),420);
+      return;
     }
-  }
+    for(const p of pts){
+      if(!p.rogue&&dist(mx,my,p.x,p.y)<18){ toast('that follows the trend'); return; }
+    }
+  };
   this.draw=(t)=>{
-    // connecting line through hit points
+    // Draw trend line excluding rogue
     ctx.beginPath();
-    let started=false;
-    for(const p of pts){ if(p.hit){ if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);} }
-    if(started){
-      ctx.strokeStyle='rgba(34,211,238,0.85)';ctx.lineWidth=2.5;
-      ctx.shadowColor='rgba(34,211,238,0.6)';ctx.shadowBlur=12;ctx.stroke();ctx.shadowBlur=0;
-    }
-    pts.forEach((p,i)=>{
+    pts.forEach((p,i)=>{ if(!p.rogue){ i===0||pts[i-1].rogue?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y); }});
+    ctx.strokeStyle='rgba(34,211,238,0.5)';ctx.lineWidth=2;ctx.stroke();
+
+    // Dashed connector showing where rogue should be
+    const prev=pts[rogueIdx-1], next=pts[rogueIdx+1];
+    ctx.beginPath();ctx.moveTo(prev.x,prev.y);ctx.lineTo(next.x,next.y);
+    ctx.strokeStyle='rgba(34,211,238,0.18)';ctx.lineWidth=1.5;ctx.setLineDash([5,7]);ctx.stroke();ctx.setLineDash([]);
+
+    pts.forEach((p)=>{
       ctx.beginPath();
-      const isNext=i===next;
-      const pulse=isNext?0.5+0.5*Math.sin(t*0.005):0;
-      ctx.arc(p.x,p.y,p.hit?5:6+pulse*2,0,7);
-      if(p.hit) ctx.fillStyle='rgba(163,230,53,0.95)';
-      else if(isNext){ ctx.fillStyle='rgba(251,191,36,0.95)';
-        ctx.fill();ctx.beginPath();ctx.arc(p.x,p.y,18,0,7);ctx.strokeStyle='rgba(251,191,36,'+(0.3+pulse*0.4)+')';ctx.lineWidth=1.5;ctx.stroke();ctx.beginPath();ctx.arc(p.x,p.y,5,0,7);ctx.fillStyle='rgba(251,191,36,0.95)'; }
-      else ctx.fillStyle='rgba(71,85,105,0.8)';
-      ctx.fill();
+      const hot=p.rogue&&dist(pointer.x,pointer.y,p.x,p.y)<22;
+      if(p.rogue){
+        const pulse=0.5+0.5*Math.sin(t*0.004);
+        ctx.arc(p.x,p.y,5+pulse*2,0,7);
+        ctx.fillStyle=hot?'rgba(251,191,36,0.95)':'rgba(239,68,68,'+(0.65+pulse*0.25)+')';
+        ctx.fill();
+        ctx.beginPath();ctx.arc(p.x,p.y,18+pulse*3,0,7);
+        ctx.strokeStyle=hot?'rgba(251,191,36,0.5)':'rgba(239,68,68,'+(0.22+pulse*0.15)+')';
+        ctx.lineWidth=1.5;ctx.stroke();
+        // drop line to where it should be
+        const expectedY=lerp(prev.y,next.y,0.5);
+        ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x,expectedY);
+        ctx.strokeStyle='rgba(239,68,68,0.2)';ctx.lineWidth=1;ctx.setLineDash([3,5]);ctx.stroke();ctx.setLineDash([]);
+      } else {
+        ctx.arc(p.x,p.y,4,0,7);
+        ctx.fillStyle='rgba(34,211,238,0.75)';ctx.fill();
+      }
     });
   };
-  this.onResize=()=>{};
-  showPrompt('Level 3 · Connect','Scattered points, no story — yet.','Trace through the <span class="key">glowing point</span>, in order, to reveal the trend.');
+  showPrompt('Level 3 · Connect','Scattered points, no story — yet.','Click the <span class="key">point breaking the trend</span> to fix the line.');
 }
 
 /* ===================================================================
    LEVEL 4 — CLUSTER THE DOTS
-   Drag dots of 4 colours into their matching zones (domains).
+   Four coloured groups of dots, each with one impostor dot of the
+   wrong colour mixed in. Click the single impostor.
    =================================================================== */
 function Level4(){
-  const zones=[
-    {name:'Healthcare', col:'#22D3EE'},
-    {name:'Retail', col:'#A3E635'},
-    {name:'Research', col:'#FBBF24'},
-    {name:'Fintech', col:'#f472b6'},
+  const zoneCols=['#22D3EE','#A3E635','#FBBF24','#f472b6'];
+  const zoneNames=['Healthcare','Retail','Research','Fintech'];
+  const dots=[];
+  const perGroup=7; // dots per colour group
+  const cx=W/2, cy=H/2;
+  // Place groups in four quadrant-ish areas
+  const centres=[
+    {x:cx*0.52,y:cy*0.58},{x:cx*1.48,y:cy*0.58},
+    {x:cx*0.52,y:cy*1.42},{x:cx*1.48,y:cy*1.42},
   ];
-  const zw=Math.min(190,(W-100)/4-14); const zgap=14;
-  const ztotal=zones.length*(zw+zgap)-zgap; const zstart=(W-ztotal)/2;
-  const zy=H-150, zh=110;
-  zones.forEach((z,i)=>{ z.x=zstart+i*(zw+zgap); z.y=zy; z.w=zw; z.h=zh; z.count=0; });
-  const dots=[]; const perZone=3;
-  zones.forEach((z,zi)=>{
-    for(let k=0;k<perZone;k++){
-      dots.push({x:rand(60,W-60),y:rand(110,H*0.5),zi,placed:false,r:7});
+
+  // Pick one group and one dot within it to be the impostor
+  const impostorGroup = Math.floor(rand(0,4));
+  const impostorSlot  = Math.floor(rand(1,perGroup)); // not index 0 (keep at least one correct)
+  const impostorColor = zoneCols[(impostorGroup+1)%4];
+
+  centres.forEach((ctr,gi)=>{
+    for(let k=0;k<perGroup;k++){
+      const isImpostor = gi===impostorGroup && k===impostorSlot;
+      dots.push({
+        x: ctr.x + rand(-70,70),
+        y: ctr.y + rand(-46,46),
+        col: isImpostor ? impostorColor : zoneCols[gi],
+        impostor: isImpostor,
+        r: 6,
+        pulse: rand(0,6),
+      });
     }
   });
-  let drag=null, offX=0, offY=0, done=false;
+
+  const impostorDot = dots.find(d=>d.impostor);
+  let done=false;
+  this.onResize=()=>{};
   this.onDown=(mx,my)=>{
-    for(let i=dots.length-1;i>=0;i--){ const d=dots[i];
-      if(!d.placed&&dist(mx,my,d.x,d.y)<14){ drag=d; offX=mx-d.x; offY=my-d.y; break; }
+    if(done) return;
+    // Check impostor first
+    if(dist(mx,my,impostorDot.x,impostorDot.y)<18){
+      done=true; toast('impostor found — wrong cluster');
+      setTimeout(()=>finishLevel(),420);
+      return;
     }
-  };
-  this.onMove=(mx,my)=>{ if(drag){ drag.x=mx-offX; drag.y=my-offY; } };
-  this.onUp=()=>{
-    if(drag){
-      const z=zones[drag.zi];
-      if(drag.x>z.x&&drag.x<z.x+z.w&&drag.y>z.y&&drag.y<z.y+z.h){
-        drag.placed=true; z.count++;
-        toast(z.name+' ✓');
-        if(dots.every(d=>d.placed)&&!done){ done=true; setTimeout(()=>finishLevel(),520); }
-      } else {
-        // wrong or empty drop — check if dropped in a wrong zone
-        for(const z2 of zones){ if(z2!==z&&drag.x>z2.x&&drag.x<z2.x+z2.w&&drag.y>z2.y&&drag.y<z2.y+z2.h){ toast('wrong cluster'); } }
-      }
-      drag=null;
+    for(const d of dots){
+      if(!d.impostor&&dist(mx,my,d.x,d.y)<14){ toast('that one belongs here'); return; }
     }
   };
   this.draw=(t)=>{
-    // zones
-    zones.forEach(z=>{
-      const hovering=drag&&drag.zi===zones.indexOf(z)&&drag.x>z.x&&drag.x<z.x+z.w&&drag.y>z.y&&drag.y<z.y+z.h;
-      ctx.fillStyle=hexA(z.col,hovering?0.16:0.06);
-      roundRect(z.x,z.y,z.w,z.h,10);ctx.fill();
-      ctx.strokeStyle=hexA(z.col,0.5);ctx.lineWidth=1.5;
-      ctx.setLineDash([6,5]);roundRect(z.x,z.y,z.w,z.h,10);ctx.stroke();ctx.setLineDash([]);
-      ctx.fillStyle=hexA(z.col,0.9);ctx.font='600 13px "JetBrains Mono",monospace';ctx.textAlign='center';
-      ctx.fillText(z.name+'  '+z.count+'/'+perZone, z.x+z.w/2, z.y+z.h/2+4);
+    // Draw faint group labels
+    centres.forEach((ctr,gi)=>{
+      ctx.fillStyle=hexA(zoneCols[gi],0.22);
+      ctx.font='600 12px "JetBrains Mono",monospace';ctx.textAlign='center';
+      ctx.fillText(zoneNames[gi], ctr.x, ctr.y - 60);
     });
     ctx.textAlign='left';
-    // dots
     dots.forEach(d=>{
-      const z=zones[d.zi];
-      ctx.beginPath();ctx.arc(d.x,d.y,d===drag?d.r+2:d.r,0,7);
-      ctx.fillStyle=hexA(z.col,d.placed?0.95:0.8);ctx.fill();
-      if(d===drag){ctx.beginPath();ctx.arc(d.x,d.y,d.r+6,0,7);ctx.strokeStyle=hexA(z.col,0.5);ctx.lineWidth=1.5;ctx.stroke();}
+      const hot=d.impostor&&dist(pointer.x,pointer.y,d.x,d.y)<18;
+      const pulse=d.impostor?(0.5+0.5*Math.sin(t*0.004+d.pulse)):0;
+      ctx.beginPath();
+      ctx.arc(d.x,d.y,d.r+(d.impostor?pulse*2:0),0,7);
+      ctx.fillStyle=hexA(d.col, hot?0.95:d.impostor?0.85:0.78);ctx.fill();
+      if(d.impostor){
+        ctx.beginPath();ctx.arc(d.x,d.y,16+pulse*3,0,7);
+        ctx.strokeStyle=hexA(d.col,hot?0.6:0.3+pulse*0.2);ctx.lineWidth=1.5;ctx.stroke();
+      }
     });
   };
-  this.onResize=()=>{};
-  showPrompt('Level 4 · Cluster','Mixed signals from every domain.','<span class="key">Drag</span> each dot into its matching field below.');
+  showPrompt('Level 4 · Cluster','Mixed signals from every domain.','Click the <span class="key">dot that doesn\'t belong</span> in its group.');
 }
 function hexA(hex,a){const n=parseInt(hex.slice(1),16);return'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')';}
 
 /* ===================================================================
-   LEVEL 5 — SPOT THE ANOMALY
-   A field of calm points; one spikes. Click the true anomaly.
+   LEVEL 5 — SPOT THE ANOMALY  (unchanged mechanic — already perfect)
    =================================================================== */
 function Level5(){
   const n=64; const pts=[]; const baseY=H*0.58;
@@ -342,7 +568,6 @@ function Level5(){
     if(dist(mx,my,a.x,a.y)<22){
       if(!done){done=true;toast('anomaly found');setTimeout(()=>finishLevel(),520);}
     } else {
-      // clicked a normal point
       for(const p of pts){ if(!p.anom&&dist(mx,my,p.x,p.y)<16){ toast('that\'s normal variation'); return; } }
     }
   };
@@ -350,7 +575,6 @@ function Level5(){
     const a=pts[anomalyIdx];
     const spike=Math.min(1,(t-t0)/1400);
     a.y=a.base-spike*H*0.22;
-    // line through baseline points
     ctx.beginPath();
     pts.forEach((p,i)=>{ i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y); });
     ctx.strokeStyle='rgba(71,85,105,0.7)';ctx.lineWidth=1.5;ctx.stroke();
@@ -387,11 +611,18 @@ function finishLevel(){
   hidePrompt();
   const ins=INSIGHTS[levelIdx];
   collected.push(ins);
-  // celebratory flash handled by insight card
-  el.insightH.textContent=ins.h;
-  el.insightP.textContent=ins.p;
+
+  // Particle burst at canvas centre
+  spawnParticles(W/2, H/2);
+
+  // Animate heading and body text
+  animateInsightHeading(el.insightH, ins.h);
+  typewriterText(el.insightP, ins.p, 420);
+
+  // Play chime
+  playInsightSound();
+
   el.insight.classList.add('show');
-  // mark dot done
   [...el.dots.children][levelIdx]?.classList.remove('active');
   [...el.dots.children][levelIdx]?.classList.add('done');
 }
@@ -423,7 +654,6 @@ function showFinal(){
 
 /* ---------- Skip ---------- */
 document.getElementById('skipBtn').addEventListener('click',()=>{
-  // fill any uncollected insights so the dashboard is complete
   for(let i=collected.length;i<TOTAL_LEVELS;i++) collected.push(INSIGHTS[i]);
   el.intro.style.opacity='0'; el.intro.style.pointerEvents='none';
   showFinal();
@@ -431,6 +661,7 @@ document.getElementById('skipBtn').addEventListener('click',()=>{
 
 /* ---------- Start / replay ---------- */
 document.getElementById('startBtn').addEventListener('click',()=>{
+  initAudio();
   el.intro.style.opacity='0'; el.intro.style.pointerEvents='none';
   setTimeout(()=>{ el.intro.classList.add('hidden'); resize(); startLevel(0); },500);
 });
@@ -443,9 +674,11 @@ document.getElementById('replayBtn').addEventListener('click',()=>{
 
 /* ---------- Render loop ---------- */
 function loop(t){
-  if(currentLevel){
+  if(currentLevel || particles.length){
     ctx.clearRect(0,0,W,H);
-    currentLevel.draw(t);
+    if(currentLevel) currentLevel.draw(t);
+    updateParticles();
+    drawParticles();
   }
   requestAnimationFrame(loop);
 }

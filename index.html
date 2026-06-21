@@ -31,8 +31,9 @@
   #levelDots .ld{width:9px;height:9px;border-radius:2px;background:var(--noise-dim);transition:all .4s}
   #levelDots .ld.done{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
   #levelDots .ld.active{background:var(--amber);box-shadow:0 0 8px var(--amber)}
-  #skipBtn{font-family:var(--mono);font-size:11px;color:var(--noise);background:none;border:1px solid var(--noise-dim);border-radius:5px;padding:7px 12px;cursor:pointer;transition:all .2s;letter-spacing:.5px}
-  #skipBtn:hover{color:var(--text-dim);border-color:var(--noise)}
+  #skipBtn,#muteBtn{font-family:var(--mono);font-size:11px;color:var(--noise);background:none;border:1px solid var(--noise-dim);border-radius:5px;padding:7px 12px;cursor:pointer;transition:all .2s;letter-spacing:.5px}
+  #skipBtn:hover,#muteBtn:hover{color:var(--text-dim);border-color:var(--noise)}
+  #muteBtn:not(.muted){color:var(--cyan);border-color:var(--cyan)}
   #stage{flex:1;position:relative;overflow:hidden}
   #board{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
   #prompt{position:absolute;top:28px;left:50%;transform:translateX(-50%);z-index:30;text-align:center;pointer-events:none;width:90%;max-width:680px;transition:opacity .5s}
@@ -40,12 +41,43 @@
   #prompt .ptitle{font-family:var(--display);font-weight:600;font-size:clamp(20px,3.2vw,30px);letter-spacing:-.5px;line-height:1.15;margin-bottom:8px}
   #prompt .phint{font-family:var(--mono);font-size:13px;color:var(--text-dim)}
   #prompt .phint .key{color:var(--cyan)}
-  #insight{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.85);z-index:40;background:var(--panel);border:1px solid var(--cyan);border-radius:16px;padding:38px 44px;max-width:520px;width:88%;text-align:center;opacity:0;pointer-events:none;box-shadow:0 24px 80px rgba(0,0,0,.6),0 0 40px rgba(34,211,238,.15);transition:opacity .5s,transform .5s}
-  #insight.show{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto}
+  /* Insight card — animated reveal */
+  #insight{
+    position:absolute;left:50%;top:50%;
+    transform:translate(-50%,-50%) scale(.78);
+    z-index:40;
+    /* gradient border via background-clip trick */
+    background:var(--panel);
+    border-radius:18px;
+    padding:38px 44px;
+    max-width:520px;width:88%;
+    text-align:center;
+    opacity:0;pointer-events:none;
+    box-shadow:0 28px 90px rgba(0,0,0,.7),0 0 0 1px rgba(34,211,238,.25);
+    transition:opacity .35s cubic-bezier(.22,1,.36,1),transform .35s cubic-bezier(.22,1,.36,1),box-shadow .35s;
+    /* animated gradient border */
+    outline:1.5px solid transparent;
+    background-clip:padding-box;
+  }
+  #insight::before{
+    content:'';position:absolute;inset:-1.5px;border-radius:19px;z-index:-1;
+    background:linear-gradient(135deg,var(--cyan),var(--lime),var(--amber),var(--cyan));
+    background-size:300% 300%;
+    opacity:0;
+    transition:opacity .35s;
+    animation:gradShift 3s linear infinite;
+  }
+  @keyframes gradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+  #insight.show{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;box-shadow:0 28px 90px rgba(0,0,0,.7),0 0 60px rgba(34,211,238,.22)}
+  #insight.show::before{opacity:1}
+  /* pop keyframe plays once on show */
+  #insight.show{animation:insightPop .38s cubic-bezier(.22,1,.36,1) both}
+  @keyframes insightPop{0%{transform:translate(-50%,-50%) scale(.78)}60%{transform:translate(-50%,-50%) scale(1.03)}100%{transform:translate(-50%,-50%) scale(1)}}
   #insight .ieyebrow{font-family:var(--mono);font-size:11px;color:var(--lime);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:8px}
-  #insight .ieyebrow::before{content:'◆';font-size:9px}
-  #insight h2{font-family:var(--display);font-weight:600;font-size:26px;letter-spacing:-.5px;margin-bottom:14px;line-height:1.2}
-  #insight p{color:var(--text-dim);font-size:15px;line-height:1.6;margin-bottom:26px}
+  #insight .ieyebrow::before{content:'◆';font-size:9px;animation:spin 4s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #insight h2{font-family:var(--display);font-weight:600;font-size:26px;letter-spacing:-.5px;margin-bottom:14px;line-height:1.2;min-height:1.4em}
+  #insight p{color:var(--text-dim);font-size:15px;line-height:1.6;margin-bottom:26px;min-height:4em}
   #insight .next{font-family:var(--mono);font-size:13px;font-weight:700;background:var(--cyan);color:var(--void);border:none;border-radius:8px;padding:13px 28px;cursor:pointer;transition:all .25s;letter-spacing:.5px}
   #insight .next:hover{background:var(--lime);transform:translateY(-2px);box-shadow:0 8px 24px rgba(34,211,238,.3)}
   #intro{position:absolute;inset:0;z-index:60;background:var(--void);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:24px;transition:opacity .6s}
@@ -109,6 +141,7 @@
     </div>
     <div class="right">
       <div id="levelDots"></div>
+      <button id="muteBtn" class="muted">♪ off</button>
       <button id="skipBtn">skip to summary →</button>
     </div>
   </div>
@@ -131,7 +164,7 @@
       <h1>This is raw data.<br>Find the <span class="g">signal</span> in it.</h1>
       <p>You're the analyst now. Each level hands you a mess of noisy data. Clean it, sort it, connect it — and every insight you uncover is something real about me.</p>
       <button class="start" id="startBtn">Start hunting →</button>
-      <div class="sub">click · drag · discover · ~90 seconds</div>
+      <div class="sub">click · discover · ~30 seconds</div>
     </div>
     <div id="final">
       <div class="wrap">
