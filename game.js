@@ -653,58 +653,81 @@ function startLevel(i){
   currentLevel=new LEVELS[i]();
 }
 
-/* ---------- Level transition: warp-tunnel ---------- */
-function warpTransition(onDone) {
-  particles.length = 0; // silence any stray particle draws
-  const t0 = performance.now();
-  const DUR = 680;
-  const cx = W / 2, cy = H / 2;
-  const DIAG = Math.hypot(cx, cy) + 60;
-  const N = 80;
-  // Pre-generate fixed streak angles so they don't jitter between frames
-  const streaks = Array.from({length: N}, (_, i) => ({
-    angle: (i / N) * Math.PI * 2 + (Math.random() - 0.5) * 0.14,
-    seed:  Math.random(),
+/* ---------- Level transition: data-stream ---------- */
+function levelTransition(label, onDone) {
+  particles.length = 0;
+  const t0   = performance.now();
+  const DUR  = 1500;
+  const cx   = W / 2, cy = H / 2;
+
+  // Floaters: mostly digits, a sprinkle of data symbols
+  const POOL  = '01234567890123456789012345678901234567890123456789%NaN∑';
+  const chars = POOL.split('');
+  const floaters = Array.from({length: 62}, () => ({
+    x:      Math.random() * W,
+    y:      Math.random() * H * 1.15 + H * 0.05, // start anywhere on-screen or just below
+    ch:     chars[Math.floor(Math.random() * chars.length)],
+    spd:    2.2 + Math.random() * 8.2,            // wide range → depth illusion
+    sz:     10 + Math.random() * 14,
+    alpha:  0.05 + Math.random() * 0.28,
+    isCyan: Math.random() < 0.11,
   }));
+
+  const fSize = Math.min(Math.max(24, W * 0.036), 36);
+  const eOut  = x => 1 - Math.pow(1 - x, 3); // easeOutCubic
+  const eIn   = x => x * x * x;               // easeInCubic
+
+  // Center label travels bottom → centre → top
+  function labelY(t) {
+    if (t < 0.33) return cy + H * 0.40 * (1 - eOut(t / 0.33));           // rise in
+    if (t < 0.66) return cy + Math.sin((t - 0.33) / 0.33 * Math.PI * 3) * 3.5; // float at centre
+    return cy - H * 0.44 * eIn((t - 0.66) / 0.34);                       // exit up
+  }
+  function labelAlpha(t) {
+    if (t < 0.09) return t / 0.09;
+    if (t < 0.60) return 1;
+    if (t < 0.72) return 1 - (t - 0.60) / 0.12;
+    return 0;
+  }
 
   function frame(now) {
     const t = Math.min(1, (now - t0) / DUR);
-    // easeInOutCubic — slow start, fast middle, slow end
-    const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
 
-    // Dark fill accumulates like motion blur
-    ctx.fillStyle = `rgba(7,11,20,${0.26 + ease * 0.44})`;
+    ctx.fillStyle = 'rgba(7,11,20,0.90)';
     ctx.fillRect(0, 0, W, H);
 
-    // Warp streaks — inner end moves slowly, outer end flies ahead
-    streaks.forEach((s, si) => {
-      const base  = 10 + s.seed * 22;
-      const inner = base + ease * DIAG * 0.20;
-      const outer = base + ease * DIAG * 1.14;
-      const alpha = t < 0.80
-        ? 0.18 + ease * 0.60
-        : ((1 - t) / 0.20) * 0.78;
-      const accent = si % 8 === 0; // every 8th streak slightly brighter
-
-      ctx.beginPath();
-      ctx.moveTo(cx + inner * Math.cos(s.angle), cy + inner * Math.sin(s.angle));
-      ctx.lineTo(cx + outer * Math.cos(s.angle), cy + outer * Math.sin(s.angle));
-      ctx.strokeStyle = accent
-        ? `rgba(220,238,252,${Math.min(1, alpha * 1.7)})`
-        : `rgba(180,210,235,${alpha})`;
-      ctx.lineWidth = accent ? 1.5 + ease * 0.9 : 0.6 + ease * 0.5;
-      ctx.stroke();
+    // Floating characters — move upward, wrap when off-top
+    ctx.textAlign = 'left';
+    floaters.forEach(f => {
+      f.y -= f.spd;
+      if (f.y < -20) {
+        f.y = H + 5 + Math.random() * 60;
+        f.x = Math.random() * W;
+        f.ch = chars[Math.floor(Math.random() * chars.length)];
+      }
+      ctx.font      = `400 ${f.sz}px "JetBrains Mono",monospace`;
+      ctx.fillStyle = f.isCyan
+        ? `rgba(34,211,238,${f.alpha})`
+        : `rgba(200,215,232,${f.alpha})`;
+      ctx.fillText(f.ch, f.x, f.y);
     });
 
-    // Soft radial flash at the midpoint — "punching through"
-    if (t > 0.34 && t < 0.70) {
-      const peak   = 1 - Math.abs(t - 0.52) / 0.18;
-      const flashA = Math.max(0, peak) * 0.20;
-      const rad = ctx.createRadialGradient(cx, cy, 0, cx, cy, W * 0.30);
-      rad.addColorStop(0, `rgba(215,232,250,${flashA})`);
-      rad.addColorStop(1, `rgba(215,232,250,0)`);
-      ctx.fillStyle = rad;
-      ctx.fillRect(0, 0, W, H);
+    // Centre label — floats through vacuum
+    const ta = labelAlpha(t);
+    if (ta > 0) {
+      const ly = labelY(t);
+      ctx.textAlign    = 'center';
+      ctx.shadowColor  = 'rgba(34,211,238,0.28)';
+      ctx.shadowBlur   = 20;
+      ctx.font         = `600 ${fSize}px "Space Grotesk",sans-serif`;
+      ctx.fillStyle    = `rgba(232,238,246,${ta})`;
+      ctx.fillText(label, cx, ly);
+      // small monospace tag floats with it
+      ctx.shadowBlur   = 0;
+      ctx.font         = `400 12px "JetBrains Mono",monospace`;
+      ctx.fillStyle    = `rgba(34,211,238,${ta * 0.48})`;
+      ctx.fillText('// initializing', cx, ly + fSize * 0.92);
+      ctx.textAlign    = 'left';
     }
 
     if (t < 1) {
@@ -736,10 +759,11 @@ function finishLevel(){
 el.insightNext.addEventListener('click',()=>{
   el.insight.classList.remove('show');
   currentLevel=null;
-  // Wait for card fade, then warp into next level
   setTimeout(()=>{
-    warpTransition(()=>{
-      if(levelIdx+1<TOTAL_LEVELS){ startLevel(levelIdx+1); }
+    const nextIdx = levelIdx + 1;
+    const label   = nextIdx < TOTAL_LEVELS ? `Reaching Level ${nextIdx + 1}` : 'Signal decoded';
+    levelTransition(label, ()=>{
+      if(nextIdx < TOTAL_LEVELS){ startLevel(nextIdx); }
       else { showFinal(); }
     });
   },340);
@@ -771,7 +795,11 @@ document.getElementById('skipBtn').addEventListener('click',()=>{
 document.getElementById('startBtn').addEventListener('click',()=>{
   initAudio();
   el.intro.style.opacity='0'; el.intro.style.pointerEvents='none';
-  setTimeout(()=>{ el.intro.classList.add('hidden'); resize(); startLevel(0); },500);
+  setTimeout(()=>{
+    el.intro.classList.add('hidden');
+    resize();
+    levelTransition("Let's visualize", ()=>startLevel(0));
+  },580);
 });
 document.getElementById('replayBtn').addEventListener('click',()=>{
   collected=[]; levelIdx=0;
