@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rishabh Singh — Signal Hunter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#070B14;--void2:#0b1120;--panel:#0f1626;--panel2:#15203a;
+    --cyan:#22D3EE;--lime:#A3E635;--amber:#FBBF24;
+    --noise:#475569;--noise-dim:#1e293b;
+    --text:#E2E8F0;--text-dim:#8295ad;--line:#1c2840;
+    --display:'Space Grotesk',sans-serif;--body:'Inter',sans-serif;--mono:'JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{background:var(--void);color:var(--text);font-family:var(--body);overflow:hidden;-webkit-font-smoothing:antialiased;user-select:none}
+  ::selection{background:var(--cyan);color:var(--void)}
+  #game{position:fixed;inset:0;display:flex;flex-direction:column}
+  #hud{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--line);background:var(--void2);z-index:50;flex-shrink:0}
+  #hud .left{display:flex;align-items:center;gap:14px}
+  #hud .logo{font-family:var(--mono);font-weight:700;font-size:14px;letter-spacing:.5px;display:flex;align-items:center;gap:8px}
+  #hud .logo .dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  #hud .title{font-family:var(--mono);font-size:12px;color:var(--text-dim);letter-spacing:1px}
+  #hud .right{display:flex;align-items:center;gap:20px}
+  #levelDots{display:flex;gap:7px}
+  #levelDots .ld{width:9px;height:9px;border-radius:2px;background:var(--noise-dim);transition:all .4s}
+  #levelDots .ld.done{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+  #levelDots .ld.active{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  #skipBtn{font-family:var(--mono);font-size:11px;color:var(--noise);background:none;border:1px solid var(--noise-dim);border-radius:5px;padding:7px 12px;cursor:pointer;transition:all .2s;letter-spacing:.5px}
+  #skipBtn:hover{color:var(--text-dim);border-color:var(--noise)}
+  #stage{flex:1;position:relative;overflow:hidden}
+  #board{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+  #prompt{position:absolute;top:28px;left:50%;transform:translateX(-50%);z-index:30;text-align:center;pointer-events:none;width:90%;max-width:680px;transition:opacity .5s}
+  #prompt .ptag{font-family:var(--mono);font-size:11px;color:var(--amber);letter-spacing:3px;text-transform:uppercase;margin-bottom:10px}
+  #prompt .ptitle{font-family:var(--display);font-weight:600;font-size:clamp(20px,3.2vw,30px);letter-spacing:-.5px;line-height:1.15;margin-bottom:8px}
+  #prompt .phint{font-family:var(--mono);font-size:13px;color:var(--text-dim)}
+  #prompt .phint .key{color:var(--cyan)}
+  #insight{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.85);z-index:40;background:var(--panel);border:1px solid var(--cyan);border-radius:16px;padding:38px 44px;max-width:520px;width:88%;text-align:center;opacity:0;pointer-events:none;box-shadow:0 24px 80px rgba(0,0,0,.6),0 0 40px rgba(34,211,238,.15);transition:opacity .5s,transform .5s}
+  #insight.show{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto}
+  #insight .ieyebrow{font-family:var(--mono);font-size:11px;color:var(--lime);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:8px}
+  #insight .ieyebrow::before{content:'◆';font-size:9px}
+  #insight h2{font-family:var(--display);font-weight:600;font-size:26px;letter-spacing:-.5px;margin-bottom:14px;line-height:1.2}
+  #insight p{color:var(--text-dim);font-size:15px;line-height:1.6;margin-bottom:26px}
+  #insight .next{font-family:var(--mono);font-size:13px;font-weight:700;background:var(--cyan);color:var(--void);border:none;border-radius:8px;padding:13px 28px;cursor:pointer;transition:all .25s;letter-spacing:.5px}
+  #insight .next:hover{background:var(--lime);transform:translateY(-2px);box-shadow:0 8px 24px rgba(34,211,238,.3)}
+  #intro{position:absolute;inset:0;z-index:60;background:var(--void);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:24px;transition:opacity .6s}
+  #intro .ieye{font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:4px;text-transform:uppercase;margin-bottom:24px;opacity:0;animation:fu .7s .2s forwards}
+  #intro h1{font-family:var(--display);font-weight:700;font-size:clamp(36px,7vw,72px);letter-spacing:-2px;line-height:1.04;margin-bottom:22px;max-width:880px;opacity:0;animation:fu .7s .4s forwards}
+  #intro h1 .g{background:linear-gradient(90deg,var(--cyan),var(--lime));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:var(--cyan)}
+  #intro p{color:var(--text-dim);font-size:clamp(15px,2vw,18px);max-width:520px;margin-bottom:40px;line-height:1.6;opacity:0;animation:fu .7s .6s forwards}
+  #intro .start{font-family:var(--mono);font-size:14px;font-weight:700;background:var(--cyan);color:var(--void);border:none;border-radius:9px;padding:16px 38px;cursor:pointer;transition:all .25s;letter-spacing:.5px;opacity:0;animation:fu .7s .8s forwards}
+  #intro .start:hover{background:var(--lime);transform:translateY(-3px);box-shadow:0 10px 30px rgba(34,211,238,.35)}
+  #intro .sub{margin-top:20px;font-family:var(--mono);font-size:11px;color:var(--noise);opacity:0;animation:fu .7s 1s forwards}
+  @keyframes fu{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+  #final{position:absolute;inset:0;z-index:55;background:var(--void);overflow-y:auto;opacity:0;pointer-events:none;transition:opacity .7s}
+  #final.show{opacity:1;pointer-events:auto}
+  #final .wrap{max-width:960px;margin:0 auto;padding:70px 24px 60px}
+  #final .fhead{text-align:center;margin-bottom:54px}
+  #final .fhead .fe{font-family:var(--mono);font-size:12px;color:var(--lime);letter-spacing:3px;text-transform:uppercase;margin-bottom:16px}
+  #final .fhead h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,5vw,52px);letter-spacing:-1.5px;line-height:1.08;margin-bottom:18px}
+  #final .fhead h1 .g{background:linear-gradient(90deg,var(--cyan),var(--lime));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:var(--cyan)}
+  #final .fhead p{color:var(--text-dim);font-size:17px;max-width:560px;margin:0 auto}
+  #insightGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:54px}
+  .icard{padding:24px;background:var(--panel);border:1px solid var(--line);border-radius:12px;transition:all .3s;opacity:0;transform:translateY(20px)}
+  .icard.in{opacity:1;transform:translateY(0)}
+  .icard:hover{border-color:var(--cyan);transform:translateY(-4px)}
+  .icard .ic-tag{font-family:var(--mono);font-size:10px;color:var(--lime);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+  .icard .ic-h{font-family:var(--display);font-weight:600;font-size:17px;margin-bottom:8px;letter-spacing:-.3px}
+  .icard .ic-p{color:var(--text-dim);font-size:13.5px;line-height:1.5}
+  #final .toolkit{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:54px}
+  #final .tool{font-family:var(--mono);font-size:12px;padding:9px 16px;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--text);transition:all .25s}
+  #final .tool:hover{border-color:var(--cyan);color:var(--cyan);transform:translateY(-3px)}
+  #final .about{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:40px;margin-bottom:48px}
+  #final .about h3{font-family:var(--display);font-weight:600;font-size:24px;margin-bottom:18px;letter-spacing:-.5px}
+  #final .about p{color:var(--text-dim);font-size:15.5px;line-height:1.7;margin-bottom:16px}
+  #final .about strong{color:var(--text)}
+  #final .about .accent{color:var(--cyan)}
+  #final .cta{text-align:center}
+  #final .cta h2{font-family:var(--display);font-weight:600;font-size:clamp(24px,4vw,38px);letter-spacing:-1px;margin-bottom:14px}
+  #final .cta .csub{color:var(--text-dim);font-size:16px;margin-bottom:34px}
+  #final .actions{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:44px}
+  .btn{font-family:var(--mono);font-size:14px;font-weight:500;padding:14px 26px;border-radius:8px;text-decoration:none;transition:all .25s;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;gap:9px}
+  .btn-primary{background:var(--cyan);color:var(--void);font-weight:700}
+  .btn-primary:hover{background:var(--lime);transform:translateY(-2px);box-shadow:0 8px 24px rgba(34,211,238,.3)}
+  .btn-ghost{border-color:var(--line);color:var(--text)}
+  .btn-ghost:hover{border-color:var(--cyan);color:var(--cyan);transform:translateY(-2px)}
+  #final .replay{font-family:var(--mono);font-size:12px;color:var(--noise);background:none;border:none;cursor:pointer;transition:color .2s}
+  #final .replay:hover{color:var(--cyan)}
+  #final .ffoot{text-align:center;padding-top:40px;margin-top:10px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+  #final .ffoot a{color:var(--cyan);text-decoration:none}
+  #toast{position:absolute;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);z-index:35;background:var(--panel2);border:1px solid var(--lime);border-radius:8px;padding:11px 20px;font-family:var(--mono);font-size:13px;color:var(--lime);opacity:0;transition:all .4s;pointer-events:none}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .hidden{display:none!important}
+  @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  @media(max-width:560px){#hud{padding:12px 16px}#hud .title{display:none}#prompt{top:16px}#insight{padding:28px 24px}}
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="hud">
+    <div class="left">
+      <span class="logo"><span class="dot"></span>RS_</span>
+      <span class="title">SIGNAL HUNTER · find the insight</span>
+    </div>
+    <div class="right">
+      <div id="levelDots"></div>
+      <button id="skipBtn">skip to summary →</button>
+    </div>
+  </div>
+  <div id="stage">
+    <canvas id="board"></canvas>
+    <div id="prompt" class="hidden">
+      <div class="ptag" id="pTag">Level 1</div>
+      <div class="ptitle" id="pTitle"></div>
+      <div class="phint" id="pHint"></div>
+    </div>
+    <div id="insight">
+      <div class="ieyebrow">Insight unlocked</div>
+      <h2 id="insightH"></h2>
+      <p id="insightP"></p>
+      <button class="next" id="insightNext">Continue →</button>
+    </div>
+    <div id="toast"></div>
+    <div id="intro">
+      <div class="ieye">A portfolio you play</div>
+      <h1>This is raw data.<br>Find the <span class="g">signal</span> in it.</h1>
+      <p>You're the analyst now. Each level hands you a mess of noisy data. Clean it, sort it, connect it — and every insight you uncover is something real about me.</p>
+      <button class="start" id="startBtn">Start hunting →</button>
+      <div class="sub">click · drag · discover · ~90 seconds</div>
+    </div>
+    <div id="final">
+      <div class="wrap">
+        <div class="fhead">
+          <div class="fe">Analysis complete</div>
+          <h1>You found the <span class="g">signal</span>.<br>Here's the full picture.</h1>
+          <p>Every insight you uncovered, assembled into one clean view — exactly what I do with messy data, every day.</p>
+        </div>
+        <div id="insightGrid"></div>
+        <div class="toolkit" id="finalTools"></div>
+        <div class="about">
+          <h3>The human behind the queries</h3>
+          <p>I'm <strong>Rishabh Singh</strong>, a Senior Data Analyst finishing an <strong>MSc in Data Science &amp; Analytics at the University of Leeds</strong>. My work lives where data is ugliest — credit and risk systems, operational pipelines, sensor networks — and the goal is always the same: make it <span class="accent">make sense</span>.</p>
+          <p>Away from the screen I'm the kind of person who reads the whole service manual before touching anything — the same instinct that has me deep in <strong>987-era Porsche forums</strong> also has me tracing a broken metric to its source at 11pm. Curiosity doesn't clock off. I also build things that matter to me, like a free Hindi-medium tech-training platform for rural youth in India — because clarity shouldn't be a luxury.</p>
+        </div>
+        <div class="cta">
+          <h2>Got messy data? Let's find the signal.</h2>
+          <p class="csub">A role, a project, or just a good data problem — I'd love to hear from you.</p>
+          <div class="actions">
+            <a href="mailto:rishabhsinghdata@gmail.com" class="btn btn-primary">Email me</a>
+            <a href="https://www.linkedin.com/in/workwithrishabh" target="_blank" rel="noopener" class="btn btn-ghost">LinkedIn</a>
+            <a href="Rishabh_Singh_CV.pdf" download="Rishabh_Singh_CV.pdf" class="btn btn-ghost" id="cvBtn">Download CV</a>
+          </div>
+          <button class="replay" id="replayBtn">↻ replay the hunt</button>
+        </div>
+        <div class="ffoot">Built from scratch by Rishabh Singh · <a href="mailto:rishabhsinghdata@gmail.com">rishabhsinghdata@gmail.com</a></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
