@@ -45,9 +45,9 @@ const INSIGHTS = [
   { tag:'By the numbers', h:'60+ stakeholders · 35% faster · same-day reporting',
     p:'Built and governed 15+ dashboards used across the business, standardised the metrics, and cut report turnaround from three days to same-day.' },
   { tag:'Banking · Risk', h:'Credit & risk monitoring for a US bank',
-    p:'Connected the dots in lending data — repayment patterns, risk indicators, account performance — and found where manual checks could become automated controls.' },
+    p:'Connected the dots in lending data: repayment patterns, risk indicators, account performance. Found where manual checks could become automated controls.' },
   { tag:'Multi-domain', h:'Healthcare · Retail · Research · Fintech',
-    p:'The domain changes, the instinct stays. Each cluster you sorted is a field I\'ve worked in — from hospital data to sales & inventory to wealth management.' },
+    p:'The domain changes, the instinct stays. Each cluster you sorted is a field I\'ve worked in: hospital data, sales and inventory, wealth management.' },
   { tag:'Research · Dissertation', h:'Found a pollution episode hidden in the noise',
     p:'My MSc dissertation analysed a city-wide PM2.5 sensor network, flagged faulty sensors, and surfaced a real May-2024 pollution event buried in noisy data. Exactly what you just did.' },
 ];
@@ -61,110 +61,140 @@ let collected = [];
 const TOTAL_LEVELS = INSIGHTS.length;
 
 /* ===================================================================
-   AUDIO ENGINE
-   Synthesised with Web Audio API — no external files.
-   Starts only after the first user gesture (startBtn click).
+   AUDIO ENGINE v2 — Web Audio step sequencer
+   Clear melodic pulse: C pentatonic arpeggio, bass anchor, echo tail.
+   Feels like calm puzzle-game music, not a drone.
    =================================================================== */
 let audioCtx = null;
 let masterGain = null;
-let ambientNodes = null;
 let audioMuted = false;
-const MASTER_VOL = 0.16;
+let _delay = null, _delayFb = null, _delayMix = null;
+let _seqTimer = null, _nextNote = 0, _step = 0;
+const MASTER_VOL = 0.15;
+
+// 78 BPM, 8th-note grid
+const _BPM  = 78;
+const _S    = 60 / _BPM / 2;   // one 8th note in seconds (~0.385 s)
+const _NSTEPS = 16;
+const _AHEAD  = 0.12;           // schedule this far ahead
+const _TICK   = 22;             // scheduler poll interval ms
+
+// C pentatonic: C4 E4 G4 A4 C5
+const _P = [261.63, 329.63, 392.00, 440.00, 523.25];
+// 16-step melody pattern. -1 = rest. Ascending arc that resolves cleanly.
+const _MEL = [0,-1,2,3, 4,-1,2,-1, 1,2,-1,3, 4,2,0,-1];
+// Bass hits: step index → frequency. C3 on beat 1, G3 on beat 3.
+const _BASS = {0:130.81, 8:196.00};
 
 function initAudio() {
   if (audioCtx) return;
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Soft limiter keeps the mix clean
+  const lim = audioCtx.createDynamicsCompressor();
+  lim.threshold.value = -8; lim.knee.value = 4;
+  lim.ratio.value = 12; lim.attack.value = 0.001; lim.release.value = 0.12;
+
   masterGain = audioCtx.createGain();
   masterGain.gain.setValueAtTime(MASTER_VOL, audioCtx.currentTime);
+  lim.connect(masterGain);
   masterGain.connect(audioCtx.destination);
-  startAmbient();
+  audioCtx._bus = lim;
+
+  // Dotted-8th delay (1.5 steps) adds groove and spaciousness
+  _delay   = audioCtx.createDelay(2.0);
+  _delay.delayTime.value = _S * 1.5;
+  _delayFb = audioCtx.createGain(); _delayFb.gain.value = 0.28;
+  _delayMix= audioCtx.createGain(); _delayMix.gain.value = 0.17;
+  _delay.connect(_delayFb); _delayFb.connect(_delay);   // feedback loop
+  _delay.connect(_delayMix); _delayMix.connect(lim);    // wet output
+
+  _nextNote = audioCtx.currentTime + 0.05;
+  _step = 0;
+  _seqTick();
 }
 
-function startAmbient() {
-  if (!audioCtx) return;
-  ambientNodes = [];
+function _melNote(freq, t, durSteps, vol) {
+  const osc  = audioCtx.createOscillator();
+  const hi   = audioCtx.createOscillator(); // octave harmonic for bell brightness
+  const env  = audioCtx.createGain();
+  const filt = audioCtx.createBiquadFilter();
 
-  // Gentle pad: two detuned sine waves + sub
-  const padFreqs = [110, 146.83, 164.81]; // A2, D3, E3 — open chord
-  padFreqs.forEach((freq, i) => {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    const lfo = audioCtx.createOscillator();
-    const lfoGain = audioCtx.createGain();
+  filt.type = 'lowpass'; filt.frequency.value = 3200; filt.Q.value = 0.5;
+  osc.type = 'triangle'; osc.frequency.value = freq;
+  hi.type  = 'sine';     hi.frequency.value  = freq * 2;
+  const hiG = audioCtx.createGain(); hiG.gain.value = 0.11;
 
-    osc.type = 'sine';
-    osc.frequency.value = freq + (i * 0.15); // tiny detune for warmth
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.08 + i * 0.03;   // very slow tremolo
-    lfoGain.gain.value = 0.012;
+  const dur = _S * durSteps;
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(vol, t + 0.007);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
-    lfo.connect(lfoGain);
-    lfoGain.connect(gain.gain);
+  hi.connect(hiG); hiG.connect(filt);
+  osc.connect(filt); filt.connect(env);
+  env.connect(audioCtx._bus);  // dry
+  env.connect(_delay);          // into echo send
 
-    gain.gain.setValueAtTime(0.055 - i * 0.012, audioCtx.currentTime);
-    gain.connect(masterGain);
+  osc.start(t); hi.start(t);
+  osc.stop(t + dur + 0.04); hi.stop(t + dur + 0.04);
+}
 
-    // Soft filter so it doesn't cut through
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 900;
-    filter.Q.value = 0.7;
-    osc.connect(filter);
-    filter.connect(gain);
+function _bassNote(freq, t) {
+  const osc  = audioCtx.createOscillator();
+  const env  = audioCtx.createGain();
+  const filt = audioCtx.createBiquadFilter();
+  filt.type = 'lowpass'; filt.frequency.value = 300; filt.Q.value = 0.4;
+  osc.type = 'sine'; osc.frequency.value = freq;
+  const dur = _S * 3.6;
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.18, t + 0.016);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(filt); filt.connect(env); env.connect(audioCtx._bus);
+  osc.start(t); osc.stop(t + dur + 0.04);
+}
 
-    osc.start();
-    lfo.start();
-    ambientNodes.push(osc, gain, lfo, lfoGain, filter);
-  });
+function _schedStep(step, t) {
+  if (audioMuted) return;
+  const ni = _MEL[step];
+  if (ni >= 0) _melNote(_P[ni], t, 1.8, 0.25);
+  if (_BASS[step] !== undefined) _bassNote(_BASS[step], t);
+}
 
-  // Sparse arpeggio — single note every ~2.4s, very quiet
-  const arpNotes = [220, 261.63, 293.66, 329.63, 392]; // A3 C4 D4 E4 G4
-  let arpIdx = 0;
-  function scheduleArp() {
-    if (!audioCtx || audioMuted) { setTimeout(scheduleArp, 2600); return; }
-    const freq = arpNotes[arpIdx % arpNotes.length];
-    arpIdx++;
-    const osc = audioCtx.createOscillator();
-    const env = audioCtx.createGain();
-    const filt = audioCtx.createBiquadFilter();
-    filt.type = 'bandpass'; filt.frequency.value = freq * 2; filt.Q.value = 1.4;
-    osc.type = 'triangle';
-    osc.frequency.value = freq;
-    const now = audioCtx.currentTime;
-    env.gain.setValueAtTime(0, now);
-    env.gain.linearRampToValueAtTime(0.038, now + 0.04);
-    env.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
-    osc.connect(filt); filt.connect(env); env.connect(masterGain);
-    osc.start(now); osc.stop(now + 0.95);
-    setTimeout(scheduleArp, 2400 + Math.random() * 800);
+function _seqTick() {
+  while (_nextNote < audioCtx.currentTime + _AHEAD) {
+    _schedStep(_step, _nextNote);
+    _nextNote += _S;
+    _step = (_step + 1) % _NSTEPS;
   }
-  setTimeout(scheduleArp, 1200);
+  _seqTimer = setTimeout(_seqTick, _TICK);
 }
 
 function playInsightSound() {
   if (!audioCtx || audioMuted) return;
   const now = audioCtx.currentTime;
-  // Ascending two-tone chime
-  [[523.25, 0], [783.99, 0.12]].forEach(([freq, delay]) => {
-    const osc = audioCtx.createOscillator();
-    const env = audioCtx.createGain();
-    const rev = audioCtx.createBiquadFilter();
-    rev.type = 'highshelf'; rev.frequency.value = 3000; rev.gain.value = 4;
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    env.gain.setValueAtTime(0, now + delay);
-    env.gain.linearRampToValueAtTime(0.22, now + delay + 0.03);
-    env.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.55);
-    osc.connect(rev); rev.connect(env); env.connect(masterGain);
-    osc.start(now + delay); osc.stop(now + delay + 0.6);
+  // Bright ascending bell chord — C5 E5 G5, inharmonic partial gives shimmer
+  [[523.25,0],[659.25,0.06],[783.99,0.13]].forEach(([f,dt])=>{
+    const t  = now + dt;
+    const o1 = audioCtx.createOscillator();
+    const o2 = audioCtx.createOscillator(); // bell partial at 2.76×
+    const g2 = audioCtx.createGain(); g2.gain.value = 0.14;
+    const env= audioCtx.createGain();
+    o1.type='sine'; o1.frequency.value=f;
+    o2.type='sine'; o2.frequency.value=f*2.76;
+    env.gain.setValueAtTime(0,t);
+    env.gain.linearRampToValueAtTime(0.27,t+0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001,t+1.15);
+    o1.connect(env); o2.connect(g2); g2.connect(env);
+    env.connect(masterGain);
+    o1.start(t); o2.start(t); o1.stop(t+1.2); o2.stop(t+1.2);
   });
 }
 
 function setMute(muted) {
   audioMuted = muted;
-  if (masterGain) {
+  if (masterGain && audioCtx) {
     masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
-    masterGain.gain.setTargetAtTime(muted ? 0 : MASTER_VOL, audioCtx.currentTime, 0.05);
+    masterGain.gain.setTargetAtTime(muted ? 0 : MASTER_VOL, audioCtx.currentTime, 0.04);
   }
   el.muteBtn.textContent = muted ? '♪ off' : '♪ on';
   el.muteBtn.classList.toggle('muted', muted);
@@ -212,33 +242,49 @@ function drawParticles() {
   }
 }
 
-// Typewriter for insight text
-function typewriterText(el, text, duration) {
-  el.textContent = '';
-  const chars = text.split('');
-  const interval = duration / chars.length;
-  let i = 0;
-  const tick = () => {
-    if (i < chars.length) { el.textContent += chars[i++]; setTimeout(tick, interval); }
-  };
-  tick();
+/* ---------- Insight text animations ---------- */
+function typewriterTitle(elH, text, onDone) {
+  const numMatch = text.match(/^(\d+)(\+?%?)/);
+  if (numMatch) {
+    // Count up the leading number, then the rest is already present
+    const target = parseInt(numMatch[1]);
+    const suffix = numMatch[2];
+    const rest   = text.slice(numMatch[0].length);
+    let cur = 0;
+    const STEPS = 32;
+    const inc = () => {
+      cur = Math.min(target, cur + Math.max(1, Math.ceil(target / STEPS)));
+      elH.textContent = cur + suffix + rest;
+      if (cur < target) requestAnimationFrame(inc);
+      else setTimeout(() => onDone && onDone(), 80);
+    };
+    requestAnimationFrame(inc);
+  } else {
+    // Typewriter with blinking cursor, target ~600 ms total
+    const chars = [...text];
+    const PER = Math.max(14, Math.min(38, 600 / chars.length));
+    elH.innerHTML = '<span class="tw-t"></span><span class="tw-cur">_</span>';
+    const tw = elH.querySelector('.tw-t');
+    const cur = elH.querySelector('.tw-cur');
+    let i = 0;
+    const tick = () => {
+      tw.textContent = chars.slice(0, i).join('');
+      i++;
+      if (i <= chars.length) setTimeout(tick, PER);
+      else setTimeout(() => { cur.style.display = 'none'; onDone && onDone(); }, 220);
+    };
+    tick();
+  }
 }
 
-// Number count-up for strings that start with a digit
-function animateInsightHeading(el, text) {
-  // If it starts with a digit, count up the leading number
-  const match = text.match(/^(\d+)/);
-  if (!match) { el.textContent = text; return; }
-  const target = parseInt(match[1]);
-  const rest = text.slice(match[1].length);
-  let current = 0;
-  const steps = 28;
-  const step = () => {
-    current = Math.min(target, current + Math.ceil(target / steps));
-    el.textContent = current + rest;
-    if (current < target) requestAnimationFrame(step);
-  };
-  step();
+function revealBodyLines(elP, text) {
+  // Split on sentence boundaries, reveal each line with a staggered fade
+  const parts = text.split('. ');
+  const sents = parts.map((s, i) => i < parts.length - 1 ? s + '.' : s);
+  elP.innerHTML = sents.map(s => `<span class="body-line">${s}</span>`).join(' ');
+  sents.forEach((_, i) =>
+    setTimeout(() => elP.querySelectorAll('.body-line')[i]?.classList.add('in'), i * 140)
+  );
 }
 
 /* ---------- Build HUD dots ---------- */
@@ -310,7 +356,7 @@ function Level1(){
       return;
     }
     for(const p of pts){
-      if(!p.outlier&&dist(mx,my,p.x,p.y)<14){ toast('that\'s signal — keep it'); return; }
+      if(!p.outlier&&dist(mx,my,p.x,p.y)<14){ toast('that\'s signal, keep it'); return; }
     }
   };
   this.draw=(t)=>{
@@ -471,7 +517,7 @@ function Level3(){
       }
     });
   };
-  showPrompt('Level 3 · Connect','Scattered points, no story — yet.','Click the <span class="key">point breaking the trend</span> to fix the line.');
+  showPrompt('Level 3 · Connect','Scattered points, no story yet.','Click the <span class="key">point breaking the trend</span> to fix the line.');
 }
 
 /* ===================================================================
@@ -517,7 +563,7 @@ function Level4(){
     if(done) return;
     // Check impostor first
     if(dist(mx,my,impostorDot.x,impostorDot.y)<18){
-      done=true; toast('impostor found — wrong cluster');
+      done=true; toast('impostor found: wrong cluster');
       setTimeout(()=>finishLevel(),420);
       return;
     }
@@ -611,18 +657,13 @@ function finishLevel(){
   hidePrompt();
   const ins=INSIGHTS[levelIdx];
   collected.push(ins);
-
-  // Particle burst at canvas centre
   spawnParticles(W/2, H/2);
-
-  // Animate heading and body text
-  animateInsightHeading(el.insightH, ins.h);
-  typewriterText(el.insightP, ins.p, 420);
-
-  // Play chime
   playInsightSound();
-
+  // Clear previous content, show card, then animate text in sequence
+  el.insightH.textContent='';
+  el.insightP.innerHTML='';
   el.insight.classList.add('show');
+  typewriterTitle(el.insightH, ins.h, () => revealBodyLines(el.insightP, ins.p));
   [...el.dots.children][levelIdx]?.classList.remove('active');
   [...el.dots.children][levelIdx]?.classList.add('done');
 }

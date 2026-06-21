@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rishabh Singh — Signal Hunter</title>
+<title>Rishabh Singh · Signal Hunter</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -80,6 +80,10 @@
   #insight p{color:var(--text-dim);font-size:15px;line-height:1.6;margin-bottom:26px;min-height:4em}
   #insight .next{font-family:var(--mono);font-size:13px;font-weight:700;background:var(--cyan);color:var(--void);border:none;border-radius:8px;padding:13px 28px;cursor:pointer;transition:all .25s;letter-spacing:.5px}
   #insight .next:hover{background:var(--lime);transform:translateY(-2px);box-shadow:0 8px 24px rgba(34,211,238,.3)}
+  #insight .tw-cur{color:var(--cyan);animation:twBlink .65s infinite}
+  @keyframes twBlink{0%,100%{opacity:1}50%{opacity:0}}
+  #insight .body-line{display:block;opacity:0;transform:translateY(7px);transition:opacity .3s,transform .3s}
+  #insight .body-line.in{opacity:1;transform:translateY(0)}
   #intro{position:absolute;inset:0;z-index:60;background:var(--void);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:24px;transition:opacity .6s}
   #intro .ieye{font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:4px;text-transform:uppercase;margin-bottom:24px;opacity:0;animation:fu .7s .2s forwards}
   #intro h1{font-family:var(--display);font-weight:700;font-size:clamp(36px,7vw,72px);letter-spacing:-2px;line-height:1.04;margin-bottom:22px;max-width:880px;opacity:0;animation:fu .7s .4s forwards}
@@ -162,7 +166,7 @@
     <div id="intro">
       <div class="ieye">A portfolio you play</div>
       <h1>This is raw data.<br>Find the <span class="g">signal</span> in it.</h1>
-      <p>You're the analyst now. Each level hands you a mess of noisy data. Clean it, sort it, connect it — and every insight you uncover is something real about me.</p>
+      <p>You're the analyst now. Each level hands you a mess of noisy data. Clean it, sort it, connect it. Every insight you uncover is something real about me.</p>
       <button class="start" id="startBtn">Start hunting →</button>
       <div class="sub">click · discover · ~30 seconds</div>
     </div>
@@ -171,18 +175,18 @@
         <div class="fhead">
           <div class="fe">Analysis complete</div>
           <h1>You found the <span class="g">signal</span>.<br>Here's the full picture.</h1>
-          <p>Every insight you uncovered, assembled into one clean view — exactly what I do with messy data, every day.</p>
+          <p>Every insight you uncovered, assembled into one clean view. Exactly what I do with messy data, every day.</p>
         </div>
         <div id="insightGrid"></div>
         <div class="toolkit" id="finalTools"></div>
         <div class="about">
           <h3>The human behind the queries</h3>
-          <p>I'm <strong>Rishabh Singh</strong>, a Senior Data Analyst finishing an <strong>MSc in Data Science &amp; Analytics at the University of Leeds</strong>. My work lives where data is ugliest — credit and risk systems, operational pipelines, sensor networks — and the goal is always the same: make it <span class="accent">make sense</span>.</p>
-          <p>Away from the screen I'm the kind of person who reads the whole service manual before touching anything — the same instinct that has me deep in <strong>987-era Porsche forums</strong> also has me tracing a broken metric to its source at 11pm. Curiosity doesn't clock off. I also build things that matter to me, like a free Hindi-medium tech-training platform for rural youth in India — because clarity shouldn't be a luxury.</p>
+          <p>I'm <strong>Rishabh Singh</strong>, a Senior Data Analyst finishing an <strong>MSc in Data Science &amp; Analytics at the University of Leeds</strong>. My work lives where data is ugliest: credit and risk systems, operational pipelines, sensor networks. The goal is always the same: make it <span class="accent">make sense</span>.</p>
+          <p>Away from the screen I'm the kind of person who reads the whole service manual before touching anything. The same instinct that has me deep in <strong>987-era Porsche forums</strong> also has me tracing a broken metric to its source at 11pm. Curiosity doesn't clock off. I also build things that matter to me, like a free Hindi-medium tech-training platform for rural youth in India, because clarity shouldn't be a luxury.</p>
         </div>
         <div class="cta">
           <h2>Got messy data? Let's find the signal.</h2>
-          <p class="csub">A role, a project, or just a good data problem — I'd love to hear from you.</p>
+          <p class="csub">A role, a project, or just a good data problem. I'd love to hear from you.</p>
           <div class="actions">
             <a href="mailto:rishabhsinghdata@gmail.com" class="btn btn-primary">Email me</a>
             <a href="https://www.linkedin.com/in/workwithrishabh" target="_blank" rel="noopener" class="btn btn-ghost">LinkedIn</a>
