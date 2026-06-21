@@ -212,7 +212,7 @@ function spawnParticles(cx, cy) {
   for (let i = 0; i < 28; i++) {
     const angle = (i / 28) * Math.PI * 2 + Math.random() * 0.4;
     const speed = 1.4 + Math.random() * 3.2;
-    const cols = ['rgba(34,211,238,', 'rgba(163,230,53,', 'rgba(251,191,36,'];
+    const cols = ['rgba(200,218,235,', 'rgba(210,225,240,', 'rgba(226,234,244,'];
     particles.push({
       x: cx, y: cy,
       vx: Math.cos(angle) * speed,

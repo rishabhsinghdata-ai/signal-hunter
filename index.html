@@ -41,46 +41,63 @@
   #prompt .ptitle{font-family:var(--display);font-weight:600;font-size:clamp(20px,3.2vw,30px);letter-spacing:-.5px;line-height:1.15;margin-bottom:8px}
   #prompt .phint{font-family:var(--mono);font-size:13px;color:var(--text-dim)}
   #prompt .phint .key{color:var(--cyan)}
-  /* Insight card — animated reveal */
+  /* Insight card — silky metallic dark */
   #insight{
     position:absolute;left:50%;top:50%;
     transform:translate(-50%,-50%) scale(.78);
     z-index:40;
-    /* gradient border via background-clip trick */
-    background:var(--panel);
+    /* directional gradient = brushed-metal "light source" from top-left */
+    background:linear-gradient(148deg,#141e30 0%,#0f1626 38%,#0d1422 68%,#0b1118 100%);
     border-radius:18px;
     padding:38px 44px;
     max-width:520px;width:88%;
     text-align:center;
     opacity:0;pointer-events:none;
-    box-shadow:0 28px 90px rgba(0,0,0,.7),0 0 0 1px rgba(34,211,238,.25);
+    box-shadow:0 32px 80px rgba(0,0,0,.92),0 0 0 1px rgba(255,255,255,.06),inset 0 1px 0 rgba(255,255,255,.06);
     transition:opacity .35s cubic-bezier(.22,1,.36,1),transform .35s cubic-bezier(.22,1,.36,1),box-shadow .35s;
-    /* animated gradient border */
-    outline:1.5px solid transparent;
-    background-clip:padding-box;
   }
+  /* cool-silver shimmer border — slow light sweep, not rainbow */
   #insight::before{
-    content:'';position:absolute;inset:-1.5px;border-radius:19px;z-index:-1;
-    background:linear-gradient(135deg,var(--cyan),var(--lime),var(--amber),var(--cyan));
-    background-size:300% 300%;
+    content:'';position:absolute;inset:-1px;border-radius:19px;z-index:-1;
+    background:linear-gradient(135deg,
+      rgba(200,220,235,.20) 0%,
+      rgba(130,170,200,.05) 28%,
+      rgba(170,205,225,.13) 58%,
+      rgba(210,228,240,.18) 100%);
+    background-size:200% 200%;
     opacity:0;
-    transition:opacity .35s;
-    animation:gradShift 3s linear infinite;
+    transition:opacity .4s;
+    animation:metalShine 7s ease-in-out infinite;
   }
-  @keyframes gradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
-  #insight.show{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;box-shadow:0 28px 90px rgba(0,0,0,.7),0 0 60px rgba(34,211,238,.22)}
+  @keyframes metalShine{0%,100%{background-position:0% 0%}50%{background-position:100% 100%}}
+  #insight.show{
+    opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;
+    box-shadow:0 32px 80px rgba(0,0,0,.92),0 0 0 1px rgba(200,220,235,.12),inset 0 1px 0 rgba(255,255,255,.07);
+  }
   #insight.show::before{opacity:1}
-  /* pop keyframe plays once on show */
   #insight.show{animation:insightPop .38s cubic-bezier(.22,1,.36,1) both}
   @keyframes insightPop{0%{transform:translate(-50%,-50%) scale(.78)}60%{transform:translate(-50%,-50%) scale(1.03)}100%{transform:translate(-50%,-50%) scale(1)}}
-  #insight .ieyebrow{font-family:var(--mono);font-size:11px;color:var(--lime);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:8px}
-  #insight .ieyebrow::before{content:'◆';font-size:9px;animation:spin 4s linear infinite}
+  #insight .ieyebrow{font-family:var(--mono);font-size:11px;color:rgba(148,175,200,.65);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:8px}
+  #insight .ieyebrow::before{content:'◆';font-size:9px;animation:spin 7s linear infinite;color:rgba(190,215,235,.4)}
   @keyframes spin{to{transform:rotate(360deg)}}
-  #insight h2{font-family:var(--display);font-weight:600;font-size:26px;letter-spacing:-.5px;margin-bottom:14px;line-height:1.2;min-height:1.4em}
-  #insight p{color:var(--text-dim);font-size:15px;line-height:1.6;margin-bottom:26px;min-height:4em}
-  #insight .next{font-family:var(--mono);font-size:13px;font-weight:700;background:var(--cyan);color:var(--void);border:none;border-radius:8px;padding:13px 28px;cursor:pointer;transition:all .25s;letter-spacing:.5px}
-  #insight .next:hover{background:var(--lime);transform:translateY(-2px);box-shadow:0 8px 24px rgba(34,211,238,.3)}
-  #insight .tw-cur{color:var(--cyan);animation:twBlink .65s infinite}
+  #insight h2{font-family:var(--display);font-weight:600;font-size:26px;letter-spacing:-.5px;margin-bottom:14px;line-height:1.2;min-height:1.4em;color:#e8edf5}
+  #insight p{color:rgba(140,158,180,.85);font-size:15px;line-height:1.6;margin-bottom:26px;min-height:4em}
+  /* frosted-glass button — no bright fill */
+  #insight .next{
+    font-family:var(--mono);font-size:13px;font-weight:600;
+    background:linear-gradient(180deg,rgba(255,255,255,.08) 0%,rgba(255,255,255,.03) 100%);
+    color:rgba(218,228,240,.88);
+    border:1px solid rgba(255,255,255,.13);
+    border-radius:8px;padding:13px 28px;cursor:pointer;transition:all .25s;letter-spacing:.5px;
+  }
+  #insight .next:hover{
+    background:linear-gradient(180deg,rgba(255,255,255,.14) 0%,rgba(255,255,255,.06) 100%);
+    border-color:rgba(255,255,255,.24);
+    color:#fff;
+    transform:translateY(-2px);
+    box-shadow:0 8px 28px rgba(0,0,0,.55);
+  }
+  #insight .tw-cur{color:rgba(180,210,232,.75);animation:twBlink .65s infinite}
   @keyframes twBlink{0%,100%{opacity:1}50%{opacity:0}}
   #insight .body-line{display:block;opacity:0;transform:translateY(7px);transition:opacity .3s,transform .3s}
   #insight .body-line.in{opacity:1;transform:translateY(0)}
